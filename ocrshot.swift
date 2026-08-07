@@ -96,6 +96,15 @@ final class OverlayView: NSView {
         }
     }
 
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { // ESC
+            log("Selection cancelled (ESC).")
+            NSApp.terminate(nil)
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         NSColor.black.withAlphaComponent(0.3).setFill()
         bounds.fill()
