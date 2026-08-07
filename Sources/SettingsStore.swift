@@ -6,7 +6,7 @@ final class SettingsStore: ObservableObject {
     static let shared = SettingsStore()
 
     @AppStorage("hotkeyKeyCode") var hotkeyKeyCode: Int = 7 // 'X'
-    @AppStorage("hotkeyModifiers") var hotkeyModifiers: Int = 0x1000 // cmd
+    @AppStorage("hotkeyModifiers") var hotkeyModifiers: Int = HotkeyModifier.command | HotkeyModifier.shift // ⌘⇧X
     @AppStorage("copyToClipboard") var copyToClipboard: Bool = true
     @AppStorage("grayscaleContrast") var grayscaleContrast: Bool = true
     @AppStorage("launchAtLogin") var launchAtLogin: Bool = false {

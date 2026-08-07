@@ -70,20 +70,22 @@ final class HotkeyManager {
 
 // MARK: - Key code helpers
 
+// macOS virtual keycodes for common keys.
 enum KeyCode {
-    static func fromCharacter(_ c: Character) -> Int? {
-        let lower = String(c).lowercased()
-        guard let scalar = lower.unicodeScalars.first else { return nil }
-        let v = Int(scalar.value)
-        if v >= 97 && v <= 122 { return v - 97 + 0 } // a-z -> 0-25
-        if v >= 48 && v <= 57 { return v - 48 + 18 } // 0-9 -> 18-27
-        return nil
-    }
+    static let kVK_ANSI_X: UInt16 = 7
 
+    // Map a keycode to a display character for common keys.
     static func character(forKeyCode code: Int) -> String {
-        if code >= 0 && code <= 25 { return String(UnicodeScalar(97 + code)!) }
-        if code >= 18 && code <= 27 { return String(UnicodeScalar(48 + code - 18)!) }
-        return "?"
+        let map: [Int: String] = [
+            0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X",
+            8: "C", 9: "V", 11: "B", 12: "Q", 13: "W", 14: "E", 15: "R",
+            16: "Y", 17: "T", 18: "1", 19: "2", 20: "3", 21: "4", 22: "5",
+            23: "6", 24: "7", 25: "8", 26: "9", 27: "0", 28: "-", 29: "=",
+            30: "[", 31: "]", 33: ";", 35: "/", 36: "Return", 48: "Tab",
+            49: "Space", 51: "Delete", 53: "Esc", 123: "←", 124: "→",
+            125: "↓", 126: "↑"
+        ]
+        return map[code] ?? "?"
     }
 }
 
