@@ -8,6 +8,7 @@ APP="$DIR/ocrshot.app"
 BIN="$APP/Contents/MacOS/ocrshot"
 
 echo "Compiling..."
+mkdir -p "$APP/Contents/MacOS"
 swiftc -O "$DIR/ocrshot.swift" -o "$BIN"
 
 echo "Writing Info.plist..."
