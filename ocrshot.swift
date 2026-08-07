@@ -196,11 +196,11 @@ for (i, overlay) in overlays.enumerated() {
                 // Dark-mode screenshots (light text on dark bg) trip up Vision;
                 // normalizing to high-contrast grayscale fixes that.
                 let ci = CIImage(cgImage: cropped)
-                let filter = CIFilter(name: "CIColorControls")!
-                filter.setValue(ci, forKey: kCIInputImageKey)
-                filter.setValue(0.0, forKey: kCIInputSaturationKey)  // grayscale
-                filter.setValue(1.3, forKey: kCIInputContrastKey)     // boost contrast
-                let out = filter.outputImage!
+                let colorFilter = CIFilter(name: "CIColorControls")!
+                colorFilter.setValue(ci, forKey: kCIInputImageKey)
+                colorFilter.setValue(0.0, forKey: kCIInputSaturationKey)  // grayscale
+                colorFilter.setValue(1.3, forKey: kCIInputContrastKey)     // boost contrast
+                let out = colorFilter.outputImage!
                 let ctx = CIContext()
                 guard let processed = ctx.createCGImage(out, from: out.extent) else {
                     log("Preprocess failed.")
