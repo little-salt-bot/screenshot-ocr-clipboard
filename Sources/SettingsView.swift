@@ -31,7 +31,7 @@ struct GeneralTab: View {
         Form {
             Section("Capture") {
                 Toggle("Copy text to clipboard", isOn: $settings.copyToClipboard)
-                Toggle("Grayscale + contrast (dark mode)", isOn: $settings.grayscaleContrast)
+                Toggle("Enhance contrast (dark mode)", isOn: $settings.grayscaleContrast)
             }
 
             Section("Startup") {

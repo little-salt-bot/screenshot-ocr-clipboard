@@ -198,13 +198,15 @@ final class CaptureController: NSObject {
                     return
                 }
 
-                // Optional preprocessing for dark-mode OCR
+                // Optional preprocessing for dark-mode OCR. We boost contrast
+                // AND saturation but do NOT desaturate — grayscale collapses
+                // colored text (e.g. red on dark gray) into the background.
                 var ocrImage = cropped
                 if settings.grayscaleContrast {
                     let ci = CIImage(cgImage: cropped)
                     let colorFilter = CIFilter(name: "CIColorControls")!
                     colorFilter.setValue(ci, forKey: kCIInputImageKey)
-                    colorFilter.setValue(0.0, forKey: kCIInputSaturationKey)
+                    colorFilter.setValue(1.4, forKey: kCIInputSaturationKey)
                     colorFilter.setValue(1.3, forKey: kCIInputContrastKey)
                     if let out = colorFilter.outputImage {
                         let ctx = CIContext()
