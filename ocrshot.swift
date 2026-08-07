@@ -163,7 +163,10 @@ for (i, overlay) in overlays.enumerated() {
         Task { @MainActor in
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-                guard let display = content.displays.first(where: { $0.frame == screen.frame })
+                // Match the display that actually contains the selection center,
+                // not by exact frame equality (SCDisplay frames differ from NSScreen).
+                let selCenter = CGPoint(x: globalRect.midX, y: globalRect.midY)
+                guard let display = content.displays.first(where: { $0.frame.contains(selCenter) })
                     ?? content.displays.first else {
                     log("No display found for selection.")
                     NSApp.terminate(nil)
