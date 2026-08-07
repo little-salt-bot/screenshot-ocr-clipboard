@@ -40,6 +40,8 @@ final class CaptureController: NSObject {
         }
     }
 
+    private var overlayWindows: [NSWindow] = []
+
     // MARK: - Overlay
 
     private func showOverlay() {
@@ -74,15 +76,31 @@ final class CaptureController: NSObject {
             overlays.append(overlay)
         }
 
-        // Safety timeout
+        overlayWindows = windows
+
+        // Safety timeout: close overlays if no selection within 60s.
         DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
             if overlays.allSatisfy({ $0.selectionRect.width == 0 }) {
-                windows.forEach { $0.orderOut(nil) }
+                self.closeOverlays()
             }
         }
     }
 
+    private func closeOverlays() {
+        overlayWindows.forEach { $0.orderOut(nil) }
+        overlayWindows = []
+    }
+
+    // Cancel the current selection (ESC or too-small click) without quitting.
+    func cancelSelection() {
+        closeOverlays()
+    }
+
     private func handleSelection(_ rect: NSRect, on screen: NSScreen) {
+        // Close the overlay immediately on mouse release — the capture
+        // runs in the background. This gives the one-shot feel.
+        closeOverlays()
+
         // Convert local (view) coords to global screen coords
         let globalRect = NSRect(
             x: rect.minX + screen.frame.minX,
@@ -212,13 +230,14 @@ final class OverlayView: NSView {
         if selectionRect.width > 5 && selectionRect.height > 5 {
             onComplete?(selectionRect)
         } else {
-            NSApp.terminate(nil)
+            // Too small to be a real selection — cancel.
+            CaptureController.shared.cancelSelection()
         }
     }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { // ESC
-            NSApp.terminate(nil)
+            CaptureController.shared.cancelSelection()
         } else {
             super.keyDown(with: event)
         }
