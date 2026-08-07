@@ -1,48 +1,78 @@
+import Carbon
 import AppKit
 
-// Global hotkey via a global event monitor. More reliable than Carbon
-// for this use case, and simpler to reason about.
+// Global hotkey via Carbon RegisterEventHotKey. This is the only way to
+// get a truly global hotkey WITHOUT Accessibility permission. Global event
+// monitors (NSEvent.addGlobalMonitorForEvents) require AX trust, which is
+// why the previous approach never fired.
 final class HotkeyManager {
     static let shared = HotkeyManager()
 
-    private var monitor: Any?
-    private var keyCode: Int = 0
-    private var modifiers: Int = 0
+    private var hotKeyRef: EventHotKeyRef?
+    private var handlerInstalled = false
+    private let hotKeySignature: OSType = 0x4F4352 // 'OCRS'
 
     private init() {}
 
-    // Register the global hotkey. Returns false if the monitor couldn't be created.
+    // Register the global hotkey. Returns false if registration failed
+    // (e.g. the shortcut is already taken by another app).
     @discardableResult
     func register(keyCode: Int, modifiers: Int) -> Bool {
         unregister()
-        self.keyCode = keyCode
-        self.modifiers = modifiers
 
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self = self else { return }
-            if Int(event.keyCode) == self.keyCode && self.matchesModifiers(event.modifierFlags) {
-                CaptureController.shared.capture()
-            }
+        if !handlerInstalled {
+            installHandler()
         }
-        return monitor != nil
+
+        var hotKeyID = EventHotKeyID(signature: hotKeySignature, id: 1)
+        let status = RegisterEventHotKey(
+            UInt32(keyCode),
+            UInt32(modifiers),
+            hotKeyID,
+            GetEventDispatcherTarget(),
+            0,
+            &hotKeyRef
+        )
+        NSLog("Hotkey register: keyCode=\(keyCode) modifiers=\(modifiers) status=\(status)")
+        return status == noErr
+    }
+
+    private func installHandler() {
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        InstallEventHandler(
+            GetEventDispatcherTarget(),
+            { _, event, _ -> OSStatus in
+                var hkID = EventHotKeyID()
+                GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hkID
+                )
+                if hkID.signature == 0x4F4352 {
+                    CaptureController.shared.capture()
+                }
+                return noErr
+            },
+            1,
+            &eventType,
+            nil,
+            nil
+        )
+        handlerInstalled = true
     }
 
     func unregister() {
-        if let m = monitor {
-            NSEvent.removeMonitor(m)
-            monitor = nil
+        if let ref = hotKeyRef {
+            UnregisterEventHotKey(ref)
+            hotKeyRef = nil
         }
-    }
-
-    private func matchesModifiers(_ flags: NSEvent.ModifierFlags) -> Bool {
-        let cmd = flags.contains(.command)
-        let opt = flags.contains(.option)
-        let ctl = flags.contains(.control)
-        let shf = flags.contains(.shift)
-        return cmd == (modifiers & HotkeyModifier.command != 0)
-            && opt == (modifiers & HotkeyModifier.option != 0)
-            && ctl == (modifiers & HotkeyModifier.control != 0)
-            && shf == (modifiers & HotkeyModifier.shift != 0)
     }
 }
 

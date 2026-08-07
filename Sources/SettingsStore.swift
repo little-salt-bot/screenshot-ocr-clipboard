@@ -14,7 +14,15 @@ final class SettingsStore: ObservableObject {
     }
     @AppStorage("lastResult") var lastResult: String = ""
 
-    private init() {}
+    private init() {
+        // One-time migration: older versions defaulted to ⌘X (command only),
+        // which conflicts with the system Cut shortcut and never registers.
+        // Bump it to ⌘⇧X if it's still the old broken default.
+        if hotkeyKeyCode == 7 && hotkeyModifiers == HotkeyModifier.command {
+            hotkeyKeyCode = 7
+            hotkeyModifiers = HotkeyModifier.command | HotkeyModifier.shift
+        }
+    }
 
     // MARK: - Launch at login
 
