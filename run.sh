@@ -5,12 +5,11 @@
 #
 # Usage:
 #   ./run.sh            # normal
-#   ./run.sh --debug    # verbose console logging + saves debug images
+#   ./run.sh --debug    # verbose logging to ~/ocrshot.log + saves debug images
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 APP="$DIR/ocrshot.app"
-BIN="$APP/Contents/MacOS/ocrshot"
 
 if [ ! -d "$APP" ]; then
     echo "App not built yet. Run ./build.sh first."
@@ -18,8 +17,10 @@ if [ ! -d "$APP" ]; then
 fi
 
 if [ "$1" == "--debug" ]; then
-    # Run the binary directly so console output is visible.
-    "$BIN" --debug
+    # Launch via open so the bundle keeps its Screen Recording permission.
+    # Console output isn't visible, but everything logs to ~/ocrshot.log
+    # and debug images are saved to the home dir.
+    open "$APP" --args --debug
 else
     open "$APP"
 fi
