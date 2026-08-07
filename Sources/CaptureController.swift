@@ -218,9 +218,8 @@ final class CaptureController: NSObject {
 
                 // OCR
                 let request = VNRecognizeTextRequest { [weak self] req, _ in
-                    guard let obs = req.results as? [VNRecognizedTextObservation] else { return }
-                    let text = obs.compactMap { $0.topCandidates(1).first?.string }
-                        .joined(separator: "\n")
+                    guard let observations = req.results as? [VNRecognizedTextObservation] else { return }
+                    let text = Self.assembleText(from: observations)
 
                     if self?.settings.copyToClipboard == true {
                         let pb = NSPasteboard.general
@@ -248,6 +247,44 @@ final class CaptureController: NSObject {
                 NSLog("Capture failed: \(error)")
             }
         }
+    }
+
+    // Reconstruct text from OCR observations using bounding boxes.
+    //
+    // Vision splits input into one observation per visual line, but it can
+    // ALSO split a single line into multiple observations when words are
+    // spaced apart. Joining every observation with "\n" then inserts spurious
+    // blank lines. Instead: group observations by their vertical center
+    // (same visual row), sort each row left-to-right, join row fragments with
+    // a space, and only "\n" between distinct rows.
+    private static func assembleText(from observations: [VNRecognizedTextObservation]) -> String {
+        struct Row {
+            var y: CGFloat
+            var items: [(x: CGFloat, text: String)]
+        }
+
+        var rows: [Row] = []
+        for obs in observations {
+            guard let candidate = obs.topCandidates(1).first else { continue }
+            let midY = obs.boundingBox.midY
+
+            // Find an existing row whose vertical center is close to this one.
+            // 0.02 (of normalized image height) tolerates Vision's per-line
+            // vertical jitter between fragments of the same visual line.
+            if let idx = rows.firstIndex(where: { abs($0.y - midY) < 0.02 }) {
+                rows[idx].items.append((x: obs.boundingBox.minX, text: candidate.string))
+            } else {
+                rows.append(Row(y: midY, items: [(x: obs.boundingBox.minX, text: candidate.string)]))
+            }
+        }
+
+        // Sort rows top-to-bottom (Vision boundingBox y is bottom-up, so larger
+        // midY = higher on screen = earlier in the output).
+        rows.sort { $0.y > $1.y }
+
+        return rows.map { row in
+            row.items.sorted { $0.x < $1.x }.map(\.text).joined(separator: " ")
+        }.joined(separator: "\n")
     }
 }
 
