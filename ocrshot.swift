@@ -32,6 +32,12 @@ let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 app.activate(ignoringOtherApps: true)
 
+// Borderless windows don't become key by default; we need key to get mouseMoved.
+final class OverlayWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 // ============================================================
 // 2. Overlay view: dims screen, drag to select a region
 // ============================================================
@@ -45,9 +51,13 @@ final class OverlayView: NSView {
         for ta in trackingAreas { removeTrackingArea(ta) }
         addTrackingArea(NSTrackingArea(
             rect: bounds,
-            options: [.activeAlways, .inVisibleRect, .cursorUpdate],
+            options: [.activeAlways, .inVisibleRect, .mouseMoved, .cursorUpdate],
             owner: self, userInfo: nil
         ))
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        NSCursor.crosshair.set()
     }
 
     override func cursorUpdate(with event: NSEvent) {
@@ -101,7 +111,7 @@ var windows: [NSWindow] = []
 var overlays: [OverlayView] = []
 
 for screen in NSScreen.screens {
-    let window = NSWindow(
+    let window = OverlayWindow(
         contentRect: screen.frame,
         styleMask: [.borderless],
         backing: .buffered,
@@ -111,6 +121,7 @@ for screen in NSScreen.screens {
     window.isOpaque = false
     window.backgroundColor = .clear
     window.ignoresMouseEvents = false
+    window.acceptsMouseMovedEvents = true
 
     let overlay = OverlayView(frame: screen.frame)
     window.contentView = overlay
@@ -136,7 +147,15 @@ DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
 for (i, overlay) in overlays.enumerated() {
     let screen = NSScreen.screens[i]
     overlay.onComplete = { rect in
-        log("Selection: \(rect)")
+        // rect is in the overlay view's LOCAL coords (origin = screen bottom-left).
+        // Convert to global screen coords.
+        let globalRect = NSRect(
+            x: rect.minX + screen.frame.minX,
+            y: rect.minY + screen.frame.minY,
+            width: rect.width,
+            height: rect.height
+        )
+        log("Selection local: \(rect)  global: \(globalRect)  screen: \(screen.frame)")
         Task { @MainActor in
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -157,14 +176,14 @@ for (i, overlay) in overlays.enumerated() {
                 let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
                 log("Captured image: \(image.width)x\(image.height)")
 
-                // Convert selection (points, bottom-left, global) to pixel crop (top-left origin)
+                // Convert global selection (points, bottom-left) to pixel crop (top-left origin)
                 let scale = CGFloat(image.width) / display.frame.width
-                let yTop = display.frame.height - (rect.maxY - display.frame.minY)
+                let yTop = display.frame.height - (globalRect.maxY - display.frame.minY)
                 let cropRect = CGRect(
-                    x: (rect.minX - display.frame.minX) * scale,
+                    x: (globalRect.minX - display.frame.minX) * scale,
                     y: yTop * scale,
-                    width: rect.width * scale,
-                    height: rect.height * scale
+                    width: globalRect.width * scale,
+                    height: globalRect.height * scale
                 )
                 log("Crop rect: \(cropRect)")
                 guard let cropped = image.cropping(to: cropRect) else {
