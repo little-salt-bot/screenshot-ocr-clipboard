@@ -69,7 +69,7 @@ struct HotkeyTab: View {
                 .disabled(recording)
             }
 
-            Text("Click the button, then press the key combination you want to use.")
+            Text("Click the button, then press a key with at least 2 modifiers (e.g. ⌘⇧, ⌃⌥, ⌘⌃).")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -110,8 +110,19 @@ struct HotkeyTab: View {
                 return nil
             }
 
+            // Require at least 2 modifiers — a single-modifier hotkey (e.g.
+            // ⌘X) is too easy to trigger accidentally and often collides with
+            // system shortcuts like Cut/Copy.
+            let mods = modifiers(from: event.modifierFlags)
+            let modifierCount = [HotkeyModifier.command, HotkeyModifier.option, HotkeyModifier.control, HotkeyModifier.shift]
+                .filter { mods & $0 != 0 }.count
+            if modifierCount < 2 {
+                DebugLog.log("Rejected hotkey: only \(modifierCount) modifier(s) pressed")
+                return nil
+            }
+
             settings.hotkeyKeyCode = keyCode
-            settings.hotkeyModifiers = modifiers(from: event.modifierFlags)
+            settings.hotkeyModifiers = mods
             DebugLog.log("Recorded hotkey: keyCode=\(keyCode) modifiers=\(settings.hotkeyModifiers)")
             HotkeyManager.shared.register(
                 keyCode: settings.hotkeyKeyCode,
