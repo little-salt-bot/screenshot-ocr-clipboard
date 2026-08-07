@@ -39,6 +39,10 @@ final class CaptureController: NSObject {
     // MARK: - Overlay
 
     private func showOverlay() {
+        // Close any existing overlays first — otherwise a new capture stacks
+        // another dim layer on top of the old one, darkening the screen.
+        closeOverlays()
+
         let app = NSApplication.shared
         app.activate(ignoringOtherApps: true)
 
