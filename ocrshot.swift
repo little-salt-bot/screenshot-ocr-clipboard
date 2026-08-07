@@ -96,7 +96,7 @@ DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
 // 3. Capture (ScreenCaptureKit), OCR, clipboard
 // ============================================================
 overlay.onComplete = { rect in
-    Task {
+    Task { @MainActor in
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             let selCenter = CGPoint(x: rect.midX, y: rect.midY)
