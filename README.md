@@ -12,10 +12,19 @@ One-shot macOS tool: take a screenshot, OCR all the text in it, and copy it stra
 ## Usage
 
 ```bash
-./ocrshot.sh
+./build.sh   # compile into ocrshot.app (needed once)
+./run.sh     # launch via LaunchServices (registers for Screen Recording)
 ```
 
 First run prompts for Screen Recording access. After granting it, run again, drag-select a region, and the text is on your clipboard.
+
+## Debug mode
+
+```bash
+./run.sh --debug
+```
+
+Runs the binary directly so console output is visible, and saves the captured + processed images to your home dir (`~/ocrshot_crop_*.png`, `~/ocrshot_processed_*.png`) so you can see exactly what OCR received. All steps also log to `~/ocrshot.log`.
 
 ## Files
 

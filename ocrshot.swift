@@ -4,6 +4,7 @@ import ScreenCaptureKit
 
 // Log to a file so errors are visible even when launched via `open`.
 let logPath = NSString(string: "~/ocrshot.log").expandingTildeInPath
+let debugMode = CommandLine.arguments.contains("--debug")
 func log(_ msg: String) {
     let line = "[\(Date())] \(msg)\n"
     if let h = FileHandle(forWritingAtPath: logPath) {
@@ -13,8 +14,11 @@ func log(_ msg: String) {
     } else {
         try? line.data(using: .utf8)?.write(to: URL(fileURLWithPath: logPath))
     }
+    if debugMode {
+        print(msg)
+    }
 }
-log("=== ocrshot started ===")
+log("=== ocrshot started === (debug=\(debugMode))")
 
 // ============================================================
 // 1. Screen Recording permission
@@ -209,10 +213,31 @@ for (i, overlay) in overlays.enumerated() {
                 }
                 log("Preprocessed image for OCR.")
 
+                // Debug: save the captured and processed images so we can see
+                // exactly what was grabbed and what OCR received.
+                if debugMode {
+                    let ts = Int(Date().timeIntervalSince1970)
+                    let rep = NSBitmapImageRep(cgImage: cropped)
+                    if let png = rep.representation(using: .png, properties: [:]) {
+                        try? png.write(to: URL(fileURLWithPath: "~/ocrshot_crop_\(ts).png".replacingOccurrences(of: "~", with: NSString(string: "~").expandingTildeInPath)))
+                    }
+                    let rep2 = NSBitmapImageRep(cgImage: processed)
+                    if let png2 = rep2.representation(using: .png, properties: [:]) {
+                        try? png2.write(to: URL(fileURLWithPath: "~/ocrshot_processed_\(ts).png".replacingOccurrences(of: "~", with: NSString(string: "~").expandingTildeInPath)))
+                    }
+                    log("Saved debug images to home dir.")
+                }
+
                 let request = VNRecognizeTextRequest { req, _ in
                     guard let obs = req.results as? [VNRecognizedTextObservation] else { return }
                     let text = obs.compactMap { $0.topCandidates(1).first?.string }
                         .joined(separator: "\n")
+
+                    if text.isEmpty {
+                        log("WARNING: OCR returned no text.")
+                    } else {
+                        log("OCR text: \(text)")
+                    }
 
                     let pb = NSPasteboard.general
                     pb.clearContents()
