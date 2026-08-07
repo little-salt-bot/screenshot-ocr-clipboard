@@ -17,6 +17,7 @@ if !CGPreflightScreenCaptureAccess() {
 // ============================================================
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
+app.activate(ignoringOtherApps: true)
 
 final class SelectionWindow: NSWindow {
     var startPoint: NSPoint = .zero
@@ -80,6 +81,15 @@ window.isOpaque = false
 window.backgroundColor = .clear
 window.ignoresMouseEvents = false
 window.makeKeyAndOrderFront(nil)
+window.orderFrontRegardless()
+
+// Safety: auto-exit if no selection within 60s (prevents silent hang)
+DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+    if window.selectionRect.width == 0 {
+        print("Timed out waiting for selection.")
+        NSApp.terminate(nil)
+    }
+}
 
 // ============================================================
 // 3. Capture, OCR, clipboard
