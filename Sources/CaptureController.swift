@@ -226,6 +226,16 @@ final class CaptureController: NSObject {
                         pb.setString(text, forType: .string)
                     }
                     self?.settings.lastResult = text.isEmpty ? "(no text found)" : text
+
+                    // Toast feedback: success if we found text and copied it.
+                    let copied = (self?.settings.copyToClipboard == true) && !text.isEmpty
+                    if copied {
+                        Toast.show(message: "Copied \(text.count) characters", success: true)
+                    } else if text.isEmpty {
+                        Toast.show(message: "No text found", success: false)
+                    } else {
+                        Toast.show(message: "Text recognized (not copied)", success: false)
+                    }
                 }
                 request.recognitionLevel = .accurate
                 request.usesLanguageCorrection = true

@@ -16,6 +16,7 @@ swiftc -O \
     "$DIR/Sources/CaptureController.swift" \
     "$DIR/Sources/SettingsStore.swift" \
     "$DIR/Sources/SettingsView.swift" \
+    "$DIR/Sources/Toast.swift" \
     -o "$BIN"
 
 echo "Writing Info.plist..."
