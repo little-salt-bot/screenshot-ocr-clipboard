@@ -24,7 +24,7 @@ final class HotkeyManager {
             installHandler()
         }
 
-        var hotKeyID = EventHotKeyID(signature: hotKeySignature, id: 1)
+        let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: 1)
         let status = RegisterEventHotKey(
             UInt32(keyCode),
             UInt32(modifiers),
