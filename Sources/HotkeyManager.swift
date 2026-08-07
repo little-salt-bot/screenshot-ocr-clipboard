@@ -10,7 +10,10 @@ final class HotkeyManager {
 
     private var hotKeyRef: EventHotKeyRef?
     private var handlerInstalled = false
+    private var localMonitor: Any?
     private let hotKeySignature: OSType = 0x4F4352 // 'OCRS'
+    private var currentKeyCode: Int = 0
+    private var currentModifiers: Int = 0
 
     private init() {}
 
@@ -19,12 +22,14 @@ final class HotkeyManager {
     @discardableResult
     func register(keyCode: Int, modifiers: Int) -> Bool {
         unregister()
+        currentKeyCode = keyCode
+        currentModifiers = modifiers
         DebugLog.log("register() called: keyCode=\(keyCode) modifiers=\(modifiers)")
 
+        // Carbon hotkey fires when the app is NOT active (background).
         if !handlerInstalled {
             installHandler()
         }
-
         let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: 1)
         let status = RegisterEventHotKey(
             UInt32(keyCode),
@@ -35,7 +40,32 @@ final class HotkeyManager {
             &hotKeyRef
         )
         DebugLog.log("RegisterEventHotKey status=\(status) (0=success) hotKeyRef=\(String(describing: hotKeyRef))")
+
+        // Local event monitor fires when the app IS active (foreground).
+        // Carbon hotkeys don't fire while the app is frontmost, so this
+        // covers the case where the user tests right after launching.
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+            if Int(event.keyCode) == self.currentKeyCode && self.matchesModifiers(event.modifierFlags) {
+                DebugLog.log("LOCAL MONITOR: hotkey matched")
+                CaptureController.shared.capture()
+                return nil
+            }
+            return event
+        }
+
         return status == noErr
+    }
+
+    private func matchesModifiers(_ flags: NSEvent.ModifierFlags) -> Bool {
+        let cmd = flags.contains(.command)
+        let opt = flags.contains(.option)
+        let ctl = flags.contains(.control)
+        let shf = flags.contains(.shift)
+        return cmd == (currentModifiers & HotkeyModifier.command != 0)
+            && opt == (currentModifiers & HotkeyModifier.option != 0)
+            && ctl == (currentModifiers & HotkeyModifier.control != 0)
+            && shf == (currentModifiers & HotkeyModifier.shift != 0)
     }
 
     private func installHandler() {
@@ -79,6 +109,10 @@ final class HotkeyManager {
         if let ref = hotKeyRef {
             UnregisterEventHotKey(ref)
             hotKeyRef = nil
+        }
+        if let m = localMonitor {
+            NSEvent.removeMonitor(m)
+            localMonitor = nil
         }
     }
 }
