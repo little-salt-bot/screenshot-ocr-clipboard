@@ -32,6 +32,9 @@ final class CaptureController: NSObject {
 
     private var overlayWindows: [NSWindow] = []
     private var escMonitor: Any?
+    private var mouseMonitor: Any?
+    private var dragStart: NSPoint?
+    private var activeOverlay: OverlayView?
 
     // MARK: - Overlay
 
@@ -78,11 +81,51 @@ final class CaptureController: NSObject {
             return event
         }
 
+        // Drive the selection from a local mouse monitor. This bypasses app
+        // activation: when the app is in the background, the first click would
+        // otherwise be swallowed by activation. The monitor catches it directly.
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            self?.handleMouseEvent(event)
+            return nil
+        }
+
         // Safety timeout: close overlays if no selection within 60s.
         DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
             if overlays.allSatisfy({ $0.selectionRect.width == 0 }) {
                 self.closeOverlays()
             }
+        }
+    }
+
+    private func handleMouseEvent(_ event: NSEvent) {
+        let p = event.locationInWindow
+        switch event.type {
+        case .leftMouseDown:
+            dragStart = p
+            activeOverlay = overlayWindows.first { $0.frame.contains(p) }?.contentView as? OverlayView
+            activeOverlay?.startPoint = p
+            activeOverlay?.selectionRect = .zero
+            activeOverlay?.needsDisplay = true
+        case .leftMouseDragged:
+            guard let start = dragStart, let ov = activeOverlay else { return }
+            ov.selectionRect = NSRect(
+                x: min(start.x, p.x),
+                y: min(start.y, p.y),
+                width: abs(p.x - start.x),
+                height: abs(p.y - start.y)
+            )
+            ov.needsDisplay = true
+        case .leftMouseUp:
+            guard let ov = activeOverlay else { return }
+            if ov.selectionRect.width > 5 && ov.selectionRect.height > 5 {
+                ov.onComplete?(ov.selectionRect)
+            } else {
+                cancelSelection()
+            }
+            dragStart = nil
+            activeOverlay = nil
+        default:
+            break
         }
     }
 
@@ -93,6 +136,12 @@ final class CaptureController: NSObject {
             NSEvent.removeMonitor(m)
             escMonitor = nil
         }
+        if let m = mouseMonitor {
+            NSEvent.removeMonitor(m)
+            mouseMonitor = nil
+        }
+        dragStart = nil
+        activeOverlay = nil
     }
 
     // Cancel the current selection (ESC or too-small click) without quitting.
