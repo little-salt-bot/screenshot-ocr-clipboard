@@ -22,7 +22,7 @@ struct OcrShotApp: App {
 // The menu bar dropdown content.
 struct MenuBarView: View {
     @Environment(\.openSettings) private var openSettings
-    @State private var lastResult: String?
+    @ObservedObject private var settings = SettingsStore.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -34,8 +34,8 @@ struct MenuBarView: View {
 
             Divider()
 
-            if let last = lastResult {
-                Text(last)
+            if !settings.lastResult.isEmpty {
+                Text(settings.lastResult)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
@@ -57,8 +57,5 @@ struct MenuBarView: View {
         }
         .padding(8)
         .frame(width: 240)
-        .onAppear {
-            lastResult = CaptureController.shared.lastResult
-        }
     }
 }
