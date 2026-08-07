@@ -1,47 +1,74 @@
-import Carbon
 import AppKit
+import ApplicationServices
 
-// Global hotkey via Carbon RegisterEventHotKey + a local event monitor.
-//  - Carbon: fires when the app is in the BACKGROUND. No Accessibility
-//    permission needed — this is the key advantage over global monitors.
-//  - Local monitor: fires when the app is in the FOREGROUND (Carbon hotkeys
-//    don't fire while the app is active).
+// Global hotkey via event monitors.
+//  - Global monitor: fires when the app is in the BACKGROUND. Requires
+//    Accessibility permission.
+//  - Local monitor: fires when the app is in the FOREGROUND. No permission.
+//
+// Critical gotcha: a global monitor created BEFORE Accessibility is granted
+// stays untrusted even after the grant. So we observe the AX-trust-change
+// notification and re-register the global monitor the moment it's granted.
 final class HotkeyManager {
     static let shared = HotkeyManager()
 
-    private var hotKeyRef: EventHotKeyRef?
-    private var handlerInstalled = false
+    private var globalMonitor: Any?
     private var localMonitor: Any?
-    private let hotKeySignature: OSType = 0x4F4352 // 'OCRS'
+    private var axObserver: NSObjectProtocol?
     private var currentKeyCode: Int = 0
     private var currentModifiers: Int = 0
 
-    private init() {}
+    private init() {
+        // When Accessibility is granted/revoked, macOS posts this notification.
+        // Re-register the global monitor so it picks up the new trust state.
+        axObserver = DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.accessibility.api"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            DebugLog.log("AX trust changed, re-registering global monitor")
+            self?.reRegisterGlobalMonitor()
+        }
+    }
 
-    // Register the global hotkey. Returns false if registration failed.
+    // Register the hotkey. Returns false if no monitor could be created.
     @discardableResult
     func register(keyCode: Int, modifiers: Int) -> Bool {
         unregister()
         currentKeyCode = keyCode
         currentModifiers = modifiers
-        DebugLog.log("register() called: keyCode=\(keyCode) modifiers=\(modifiers)")
+        DebugLog.log("register() called: keyCode=\(keyCode) modifiers=\(modifiers) axTrusted=\(AXIsProcessTrusted())")
 
-        // Carbon hotkey: fires when the app is in the background. No AX needed.
-        if !handlerInstalled {
-            installHandler()
+        registerLocalMonitor()
+        registerGlobalMonitorIfTrusted()
+
+        return globalMonitor != nil || localMonitor != nil
+    }
+
+    private func registerGlobalMonitorIfTrusted() {
+        if !AXIsProcessTrusted() {
+            DebugLog.log("AX not trusted — global (background) hotkey disabled. Grant Accessibility and it will auto-enable.")
+            return
         }
-        let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: 1)
-        let status = RegisterEventHotKey(
-            UInt32(keyCode),
-            UInt32(modifiers),
-            hotKeyID,
-            GetEventDispatcherTarget(),
-            0,
-            &hotKeyRef
-        )
-        DebugLog.log("RegisterEventHotKey status=\(status) (0=success) hotKeyRef=\(String(describing: hotKeyRef))")
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return }
+            if Int(event.keyCode) == self.currentKeyCode && self.matches(event.modifierFlags) {
+                DebugLog.log("GLOBAL MONITOR: hotkey matched")
+                CaptureController.shared.capture()
+            }
+        }
+        DebugLog.log("Global monitor created: \(globalMonitor != nil)")
+    }
 
-        // Local monitor: fires when the app is in the foreground.
+    private func reRegisterGlobalMonitor() {
+        if let m = globalMonitor {
+            NSEvent.removeMonitor(m)
+            globalMonitor = nil
+        }
+        registerGlobalMonitorIfTrusted()
+    }
+
+    private func registerLocalMonitor() {
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
             if Int(event.keyCode) == self.currentKeyCode && self.matches(event.modifierFlags) {
@@ -51,41 +78,6 @@ final class HotkeyManager {
             }
             return event
         }
-
-        return status == noErr
-    }
-
-    private func installHandler() {
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
-        InstallEventHandler(
-            GetEventDispatcherTarget(),
-            { _, event, _ -> OSStatus in
-                DebugLog.log("CARBON CALLBACK FIRED")
-                var hkID = EventHotKeyID()
-                GetEventParameter(
-                    event,
-                    EventParamName(kEventParamDirectObject),
-                    EventParamType(typeEventHotKeyID),
-                    nil,
-                    MemoryLayout<EventHotKeyID>.size,
-                    nil,
-                    &hkID
-                )
-                if hkID.signature == 0x4F4352 {
-                    DebugLog.log("Signature match, triggering capture")
-                    CaptureController.shared.capture()
-                }
-                return noErr
-            },
-            1,
-            &eventType,
-            nil,
-            nil
-        )
-        handlerInstalled = true
     }
 
     private func matches(_ flags: NSEvent.ModifierFlags) -> Bool {
@@ -100,9 +92,9 @@ final class HotkeyManager {
     }
 
     func unregister() {
-        if let ref = hotKeyRef {
-            UnregisterEventHotKey(ref)
-            hotKeyRef = nil
+        if let m = globalMonitor {
+            NSEvent.removeMonitor(m)
+            globalMonitor = nil
         }
         if let m = localMonitor {
             NSEvent.removeMonitor(m)

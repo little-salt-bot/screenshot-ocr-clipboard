@@ -1,11 +1,19 @@
 import AppKit
 import SwiftUI
+import ApplicationServices
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var settingsWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Request Accessibility permission — needed for the global hotkey to
+        // work when the app is in the background.
+        if !AXIsProcessTrusted() {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            AXIsProcessTrustedWithOptions(options)
+        }
+
         // Register the global hotkey from saved settings.
         let settings = SettingsStore.shared
         HotkeyManager.shared.register(
