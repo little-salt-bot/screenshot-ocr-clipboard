@@ -1,70 +1,48 @@
-import Carbon
 import AppKit
 
-// Global hotkey registration via the Carbon Event Manager.
-// Carbon is the only way to register a truly global hotkey without
-// accessibility permissions or a third-party library.
+// Global hotkey via a global event monitor. More reliable than Carbon
+// for this use case, and simpler to reason about.
 final class HotkeyManager {
     static let shared = HotkeyManager()
 
-    private var hotKeyRef: EventHotKeyRef?
-    private var hotKeyID = EventHotKeyID(signature: 0x4F4352, id: 1) // 'OCRS'
+    private var monitor: Any?
+    private var keyCode: Int = 0
+    private var modifiers: Int = 0
 
     private init() {}
 
-    // Register the global hotkey. Returns false if registration failed
-    // (e.g. the shortcut is already taken by another app).
+    // Register the global hotkey. Returns false if the monitor couldn't be created.
     @discardableResult
     func register(keyCode: Int, modifiers: Int) -> Bool {
         unregister()
+        self.keyCode = keyCode
+        self.modifiers = modifiers
 
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
-
-        // Install the event handler once.
-        InstallEventHandler(
-            GetEventDispatcherTarget(),
-            { _, event, _ -> OSStatus in
-                var hkID = EventHotKeyID()
-                GetEventParameter(
-                    event,
-                    EventParamName(kEventParamDirectObject),
-                    EventParamType(typeEventHotKeyID),
-                    nil,
-                    MemoryLayout<EventHotKeyID>.size,
-                    nil,
-                    &hkID
-                )
-                if hkID.signature == 0x4F4352 {
-                    CaptureController.shared.capture()
-                }
-                return noErr
-            },
-            1,
-            &eventType,
-            nil,
-            nil
-        )
-
-        hotKeyID.id = 1
-        let status = RegisterEventHotKey(
-            UInt32(keyCode),
-            UInt32(modifiers),
-            hotKeyID,
-            GetEventDispatcherTarget(),
-            0,
-            &hotKeyRef
-        )
-        return status == noErr
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return }
+            if Int(event.keyCode) == self.keyCode && self.matchesModifiers(event.modifierFlags) {
+                CaptureController.shared.capture()
+            }
+        }
+        return monitor != nil
     }
 
     func unregister() {
-        if let ref = hotKeyRef {
-            UnregisterEventHotKey(ref)
-            hotKeyRef = nil
+        if let m = monitor {
+            NSEvent.removeMonitor(m)
+            monitor = nil
         }
+    }
+
+    private func matchesModifiers(_ flags: NSEvent.ModifierFlags) -> Bool {
+        let cmd = flags.contains(.command)
+        let opt = flags.contains(.option)
+        let ctl = flags.contains(.control)
+        let shf = flags.contains(.shift)
+        return cmd == (modifiers & HotkeyModifier.command != 0)
+            && opt == (modifiers & HotkeyModifier.option != 0)
+            && ctl == (modifiers & HotkeyModifier.control != 0)
+            && shf == (modifiers & HotkeyModifier.shift != 0)
     }
 }
 
@@ -89,7 +67,7 @@ enum KeyCode {
     }
 }
 
-// Carbon modifier flags
+// Carbon modifier flags (kept for settings storage compatibility)
 enum HotkeyModifier {
     static let command = 0x1000
     static let option = 0x0800

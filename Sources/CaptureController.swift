@@ -31,6 +31,7 @@ final class CaptureController: NSObject {
     }
 
     private var overlayWindows: [NSWindow] = []
+    private var escMonitor: Any?
 
     // MARK: - Overlay
 
@@ -68,6 +69,15 @@ final class CaptureController: NSObject {
 
         overlayWindows = windows
 
+        // Local event monitor catches ESC regardless of which window is key.
+        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // ESC
+                self?.cancelSelection()
+                return nil
+            }
+            return event
+        }
+
         // Safety timeout: close overlays if no selection within 60s.
         DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
             if overlays.allSatisfy({ $0.selectionRect.width == 0 }) {
@@ -79,6 +89,10 @@ final class CaptureController: NSObject {
     private func closeOverlays() {
         overlayWindows.forEach { $0.orderOut(nil) }
         overlayWindows = []
+        if let m = escMonitor {
+            NSEvent.removeMonitor(m)
+            escMonitor = nil
+        }
     }
 
     // Cancel the current selection (ESC or too-small click) without quitting.
