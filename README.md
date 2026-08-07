@@ -4,9 +4,10 @@ One-shot macOS tool: take a screenshot, OCR all the text in it, and copy it stra
 
 ## How it works
 
-- `screencapture -i` — interactive region/window selection
-- Apple **Vision framework** — accurate OCR with language correction
-- `pbcopy` — text lands on your clipboard
+- **Screen Recording permission** — the app requests it on first run (System Settings → Privacy & Security → Screen Recording)
+- **Interactive region selection** — drag to select an area, or click to cancel
+- **Apple Vision framework** — accurate OCR with language correction
+- **`NSPasteboard`** — text lands on your clipboard
 
 ## Usage
 
@@ -14,16 +15,16 @@ One-shot macOS tool: take a screenshot, OCR all the text in it, and copy it stra
 ./ocrshot.sh
 ```
 
-Drag-select a region (or click a window). The text is on your clipboard.
+First run prompts for Screen Recording access. After granting it, run again, drag-select a region, and the text is on your clipboard.
 
 ## Files
 
-- `ocrshot.sh` — the one-shot entry point (screenshot → OCR → clipboard)
-- `ocr.swift` — Vision framework OCR, prints recognized text lines
+- `ocrshot.sh` — runs the Swift app
+- `ocrshot.swift` — the whole flow: permission → capture → OCR → clipboard
 
 ## Requirements
 
-- macOS (uses `screencapture`, `pbcopy`, and the Vision framework)
+- macOS (uses the Vision framework, `CGWindowListCreateImage`, and `NSPasteboard`)
 - Xcode Command Line Tools (for `swift`)
 
 ## Optional: global hotkey
