@@ -1,21 +1,24 @@
+import Carbon
 import AppKit
-import ApplicationServices
 
-// Global hotkey via event monitors. Two monitors cover all cases:
-//  - Global monitor: fires when the app is NOT active (background).
-//  - Local monitor: fires when the app IS active (foreground).
-// Global key monitors require Accessibility permission, which we request.
+// Global hotkey via Carbon RegisterEventHotKey + a local event monitor.
+//  - Carbon: fires when the app is in the BACKGROUND. No Accessibility
+//    permission needed — this is the key advantage over global monitors.
+//  - Local monitor: fires when the app is in the FOREGROUND (Carbon hotkeys
+//    don't fire while the app is active).
 final class HotkeyManager {
     static let shared = HotkeyManager()
 
-    private var globalMonitor: Any?
+    private var hotKeyRef: EventHotKeyRef?
+    private var handlerInstalled = false
     private var localMonitor: Any?
+    private let hotKeySignature: OSType = 0x4F4352 // 'OCRS'
     private var currentKeyCode: Int = 0
     private var currentModifiers: Int = 0
 
     private init() {}
 
-    // Register the global hotkey. Returns false if neither monitor could be created.
+    // Register the global hotkey. Returns false if registration failed.
     @discardableResult
     func register(keyCode: Int, modifiers: Int) -> Bool {
         unregister()
@@ -23,14 +26,20 @@ final class HotkeyManager {
         currentModifiers = modifiers
         DebugLog.log("register() called: keyCode=\(keyCode) modifiers=\(modifiers)")
 
-        // Global monitor: fires when the app is in the background.
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self = self else { return }
-            if Int(event.keyCode) == self.currentKeyCode && self.matches(event.modifierFlags) {
-                DebugLog.log("GLOBAL MONITOR: hotkey matched")
-                CaptureController.shared.capture()
-            }
+        // Carbon hotkey: fires when the app is in the background. No AX needed.
+        if !handlerInstalled {
+            installHandler()
         }
+        let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: 1)
+        let status = RegisterEventHotKey(
+            UInt32(keyCode),
+            UInt32(modifiers),
+            hotKeyID,
+            GetEventDispatcherTarget(),
+            0,
+            &hotKeyRef
+        )
+        DebugLog.log("RegisterEventHotKey status=\(status) (0=success) hotKeyRef=\(String(describing: hotKeyRef))")
 
         // Local monitor: fires when the app is in the foreground.
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -43,8 +52,40 @@ final class HotkeyManager {
             return event
         }
 
-        DebugLog.log("globalMonitor=\(globalMonitor != nil) localMonitor=\(localMonitor != nil)")
-        return globalMonitor != nil || localMonitor != nil
+        return status == noErr
+    }
+
+    private func installHandler() {
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        InstallEventHandler(
+            GetEventDispatcherTarget(),
+            { _, event, _ -> OSStatus in
+                DebugLog.log("CARBON CALLBACK FIRED")
+                var hkID = EventHotKeyID()
+                GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hkID
+                )
+                if hkID.signature == 0x4F4352 {
+                    DebugLog.log("Signature match, triggering capture")
+                    CaptureController.shared.capture()
+                }
+                return noErr
+            },
+            1,
+            &eventType,
+            nil,
+            nil
+        )
+        handlerInstalled = true
     }
 
     private func matches(_ flags: NSEvent.ModifierFlags) -> Bool {
@@ -59,20 +100,14 @@ final class HotkeyManager {
     }
 
     func unregister() {
-        if let m = globalMonitor {
-            NSEvent.removeMonitor(m)
-            globalMonitor = nil
+        if let ref = hotKeyRef {
+            UnregisterEventHotKey(ref)
+            hotKeyRef = nil
         }
         if let m = localMonitor {
             NSEvent.removeMonitor(m)
             localMonitor = nil
         }
-    }
-
-    // Request Accessibility permission (needed for the global key monitor).
-    static func requestAccessibilityPermission() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        AXIsProcessTrustedWithOptions(options)
     }
 }
 

@@ -13,10 +13,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             modifiers: settings.hotkeyModifiers
         )
 
-        // Global key monitor needs Accessibility permission. Request it so the
-        // hotkey works when the app is in the background.
-        HotkeyManager.requestAccessibilityPermission()
-
         setupStatusItem()
     }
 
