@@ -103,7 +103,8 @@ struct HotkeyTab: View {
             }
 
             settings.hotkeyKeyCode = keyCode
-            settings.hotkeyModifiers = currentModifiers()
+            settings.hotkeyModifiers = modifiers(from: event.modifierFlags)
+            DebugLog.log("Recorded hotkey: keyCode=\(keyCode) modifiers=\(settings.hotkeyModifiers)")
             HotkeyManager.shared.register(
                 keyCode: settings.hotkeyKeyCode,
                 modifiers: settings.hotkeyModifiers
@@ -121,6 +122,17 @@ struct HotkeyTab: View {
         }
     }
 
+    // Read modifiers from the event itself, not global state (NSEvent.modifierFlags
+    // can include stray flags like control that the user isn't actually pressing).
+    private func modifiers(from flags: NSEvent.ModifierFlags) -> Int {
+        var mods = 0
+        if flags.contains(.command) { mods |= HotkeyModifier.command }
+        if flags.contains(.option) { mods |= HotkeyModifier.option }
+        if flags.contains(.control) { mods |= HotkeyModifier.control }
+        if flags.contains(.shift) { mods |= HotkeyModifier.shift }
+        return mods
+    }
+
     private var displayString: String {
         var parts: [String] = []
         if settings.hotkeyModifiers & HotkeyModifier.command != 0 { parts.append("⌘") }
@@ -129,16 +141,6 @@ struct HotkeyTab: View {
         if settings.hotkeyModifiers & HotkeyModifier.shift != 0 { parts.append("⇧") }
         parts.append(KeyCode.character(forKeyCode: settings.hotkeyKeyCode).uppercased())
         return parts.joined(separator: "")
-    }
-
-    private func currentModifiers() -> Int {
-        let flags = NSEvent.modifierFlags
-        var mods = 0
-        if flags.contains(.command) { mods |= HotkeyModifier.command }
-        if flags.contains(.option) { mods |= HotkeyModifier.option }
-        if flags.contains(.control) { mods |= HotkeyModifier.control }
-        if flags.contains(.shift) { mods |= HotkeyModifier.shift }
-        return mods
     }
 }
 
