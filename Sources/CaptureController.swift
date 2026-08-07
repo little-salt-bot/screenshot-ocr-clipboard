@@ -25,19 +25,9 @@ final class CaptureController: NSObject {
     // MARK: - Permission
 
     private func requestPermission() {
+        // The system TCC prompt appears automatically. Don't show our own
+        // alert on top of it — that creates a confusing double popup.
         CGRequestScreenCaptureAccess()
-        // The system prompt appears; the user must grant access in
-        // System Settings. We can't proceed until they do.
-        let alert = NSAlert()
-        alert.messageText = "Screen Recording Access Required"
-        alert.informativeText = "Grant access in System Settings → Privacy & Security → Screen Recording, then try again."
-        alert.addButton(withTitle: "Open Settings")
-        alert.addButton(withTitle: "OK")
-        if alert.runModal() == .alertFirstButtonReturn {
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                NSWorkspace.shared.open(url)
-            }
-        }
     }
 
     private var overlayWindows: [NSWindow] = []
