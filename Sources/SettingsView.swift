@@ -48,6 +48,7 @@ struct GeneralTab: View {
 struct HotkeyTab: View {
     @ObservedObject private var settings = SettingsStore.shared
     @State private var recording = false
+    @State private var monitor: Any?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -58,7 +59,7 @@ struct HotkeyTab: View {
                 Text("Shortcut")
                 Spacer()
                 Button {
-                    recording = true
+                    startRecording()
                 } label: {
                     Text(recording ? "Press keys…" : displayString)
                         .frame(minWidth: 120)
@@ -84,21 +85,39 @@ struct HotkeyTab: View {
             }
         }
         .padding()
-        .onKeyPress { press in
-            guard recording else { return .ignored }
-            // Capture the pressed key
-            if let first = press.characters.first,
-               let code = KeyCode.fromCharacter(first) {
-                settings.hotkeyKeyCode = code
-                settings.hotkeyModifiers = currentModifiers()
-                HotkeyManager.shared.register(
-                    keyCode: settings.hotkeyKeyCode,
-                    modifiers: settings.hotkeyModifiers
-                )
-                recording = false
-                return .handled
+        .onDisappear {
+            stopRecording()
+        }
+    }
+
+    private func startRecording() {
+        recording = true
+        // Local event monitor captures the next key press regardless of focus.
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard recording else { return event }
+
+            // Ignore pure modifier presses (cmd/opt/ctrl/shift alone).
+            let keyCode = Int(event.keyCode)
+            if keyCode == 55 || keyCode == 56 || keyCode == 58 || keyCode == 59 || keyCode == 60 || keyCode == 61 || keyCode == 62 || keyCode == 63 || keyCode == 54 {
+                return nil
             }
-            return .ignored
+
+            settings.hotkeyKeyCode = keyCode
+            settings.hotkeyModifiers = currentModifiers()
+            HotkeyManager.shared.register(
+                keyCode: settings.hotkeyKeyCode,
+                modifiers: settings.hotkeyModifiers
+            )
+            recording = false
+            stopRecording()
+            return nil
+        }
+    }
+
+    private func stopRecording() {
+        if let m = monitor {
+            NSEvent.removeMonitor(m)
+            monitor = nil
         }
     }
 
