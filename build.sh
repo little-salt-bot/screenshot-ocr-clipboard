@@ -11,6 +11,7 @@ mkdir -p "$APP/Contents/MacOS"
 swiftc -O \
     "$DIR/Sources/OcrShotApp.swift" \
     "$DIR/Sources/AppDelegate.swift" \
+    "$DIR/Sources/DebugLog.swift" \
     "$DIR/Sources/HotkeyManager.swift" \
     "$DIR/Sources/CaptureController.swift" \
     "$DIR/Sources/SettingsStore.swift" \

@@ -19,6 +19,7 @@ final class HotkeyManager {
     @discardableResult
     func register(keyCode: Int, modifiers: Int) -> Bool {
         unregister()
+        DebugLog.log("register() called: keyCode=\(keyCode) modifiers=\(modifiers)")
 
         if !handlerInstalled {
             installHandler()
@@ -33,18 +34,20 @@ final class HotkeyManager {
             0,
             &hotKeyRef
         )
-        NSLog("Hotkey register: keyCode=\(keyCode) modifiers=\(modifiers) status=\(status)")
+        DebugLog.log("RegisterEventHotKey status=\(status) (0=success) hotKeyRef=\(String(describing: hotKeyRef))")
         return status == noErr
     }
 
     private func installHandler() {
+        DebugLog.log("installHandler() called")
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
         )
-        InstallEventHandler(
+        let installStatus = InstallEventHandler(
             GetEventDispatcherTarget(),
             { _, event, _ -> OSStatus in
+                DebugLog.log("HOTKEY CALLBACK FIRED")
                 var hkID = EventHotKeyID()
                 GetEventParameter(
                     event,
@@ -56,7 +59,10 @@ final class HotkeyManager {
                     &hkID
                 )
                 if hkID.signature == 0x4F4352 {
+                    DebugLog.log("Signature match, triggering capture")
                     CaptureController.shared.capture()
+                } else {
+                    DebugLog.log("Signature mismatch: \(hkID.signature)")
                 }
                 return noErr
             },
@@ -65,6 +71,7 @@ final class HotkeyManager {
             nil,
             nil
         )
+        DebugLog.log("InstallEventHandler status=\(installStatus)")
         handlerInstalled = true
     }
 
