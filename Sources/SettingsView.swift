@@ -102,6 +102,14 @@ struct HotkeyTab: View {
                 return nil
             }
 
+            // Reject ESC (53) and other non-alphanumeric keys — they can't be
+            // used as a hotkey and ESC is reserved for cancelling.
+            let alphanumeric: Set<Int> = Set(0...27) // letters + numbers
+            if keyCode == 53 || !alphanumeric.contains(keyCode) {
+                DebugLog.log("Rejected key as hotkey: keyCode=\(keyCode)")
+                return nil
+            }
+
             settings.hotkeyKeyCode = keyCode
             settings.hotkeyModifiers = modifiers(from: event.modifierFlags)
             DebugLog.log("Recorded hotkey: keyCode=\(keyCode) modifiers=\(settings.hotkeyModifiers)")

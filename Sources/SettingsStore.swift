@@ -14,7 +14,19 @@ final class SettingsStore: ObservableObject {
     }
     @AppStorage("lastResult") var lastResult: String = ""
 
-    private init() {}
+    private init() {
+        // One-time migration: an earlier recorder allowed ESC (keycode 53) to
+        // be set as the hotkey, which broke cancelling. Reset it to a safe
+        // default if that happened. Guarded so it only runs once.
+        let migrated = UserDefaults.standard.bool(forKey: "hotkeyEscapeMigrated")
+        if !migrated {
+            if hotkeyKeyCode == 53 { // ESC
+                hotkeyKeyCode = 7
+                hotkeyModifiers = HotkeyModifier.command | HotkeyModifier.shift // ⌘⇧X
+            }
+            UserDefaults.standard.set(true, forKey: "hotkeyEscapeMigrated")
+        }
+    }
 
     // MARK: - Launch at login
 
