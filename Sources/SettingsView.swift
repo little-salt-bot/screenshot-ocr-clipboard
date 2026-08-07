@@ -87,7 +87,7 @@ struct HotkeyTab: View {
         .onKeyPress { press in
             guard recording else { return .ignored }
             // Capture the pressed key
-            if let chars = press.characters, let first = chars.first,
+            if let first = press.characters.first,
                let code = KeyCode.fromCharacter(first) {
                 settings.hotkeyKeyCode = code
                 settings.hotkeyModifiers = currentModifiers()
