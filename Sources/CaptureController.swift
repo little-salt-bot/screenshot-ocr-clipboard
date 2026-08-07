@@ -1,0 +1,239 @@
+import AppKit
+import Vision
+import ScreenCaptureKit
+
+// Handles the full capture flow: permission check, overlay selection,
+// screen capture, OCR, and clipboard copy. Settings-aware.
+final class CaptureController: NSObject {
+    static let shared = CaptureController()
+
+    private let settings = SettingsStore.shared
+
+    // MARK: - Public API
+
+    func capture() {
+        // 1. Permission check
+        guard CGPreflightScreenCaptureAccess() else {
+            requestPermission()
+            return
+        }
+
+        // 2. Show the selection overlay
+        showOverlay()
+    }
+
+    // MARK: - Permission
+
+    private func requestPermission() {
+        CGRequestScreenCaptureAccess()
+        // The system prompt appears; the user must grant access in
+        // System Settings. We can't proceed until they do.
+        let alert = NSAlert()
+        alert.messageText = "Screen Recording Access Required"
+        alert.informativeText = "Grant access in System Settings → Privacy & Security → Screen Recording, then try again."
+        alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "OK")
+        if alert.runModal() == .alertFirstButtonReturn {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    // MARK: - Overlay
+
+    private func showOverlay() {
+        let app = NSApplication.shared
+        app.activate(ignoringOtherApps: true)
+
+        var windows: [NSWindow] = []
+        var overlays: [OverlayView] = []
+
+        for screen in NSScreen.screens {
+            let window = OverlayWindow(
+                contentRect: screen.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false
+            )
+            window.level = .screenSaver
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.ignoresMouseEvents = false
+            window.acceptsMouseMovedEvents = true
+
+            let overlay = OverlayView(frame: screen.frame)
+            overlay.onComplete = { [weak self] rect in
+                self?.handleSelection(rect, on: screen)
+            }
+            window.contentView = overlay
+            window.makeKeyAndOrderFront(nil)
+            window.orderFrontRegardless()
+
+            windows.append(window)
+            overlays.append(overlay)
+        }
+
+        // Safety timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+            if overlays.allSatisfy({ $0.selectionRect.width == 0 }) {
+                windows.forEach { $0.orderOut(nil) }
+            }
+        }
+    }
+
+    private func handleSelection(_ rect: NSRect, on screen: NSScreen) {
+        // Convert local (view) coords to global screen coords
+        let globalRect = NSRect(
+            x: rect.minX + screen.frame.minX,
+            y: rect.minY + screen.frame.minY,
+            width: rect.width,
+            height: rect.height
+        )
+
+        Task { @MainActor in
+            do {
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                let selCenter = CGPoint(x: globalRect.midX, y: globalRect.midY)
+                guard let display = content.displays.first(where: { $0.frame.contains(selCenter) })
+                    ?? content.displays.first else {
+                    NSLog("No display found for selection.")
+                    return
+                }
+
+                let filter = SCContentFilter(display: display, excludingWindows: [])
+                let config = SCStreamConfiguration()
+                config.width = Int(display.frame.width)
+                config.height = Int(display.frame.height)
+                config.showsCursor = false
+
+                let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+
+                // Convert global selection (points, bottom-left) to pixel crop (top-left origin)
+                let scale = CGFloat(image.width) / display.frame.width
+                let yTop = display.frame.height - (globalRect.maxY - display.frame.minY)
+                let cropRect = CGRect(
+                    x: (globalRect.minX - display.frame.minX) * scale,
+                    y: yTop * scale,
+                    width: globalRect.width * scale,
+                    height: globalRect.height * scale
+                )
+                guard let cropped = image.cropping(to: cropRect) else {
+                    NSLog("Crop failed.")
+                    return
+                }
+
+                // Optional preprocessing for dark-mode OCR
+                var ocrImage = cropped
+                if settings.grayscaleContrast {
+                    let ci = CIImage(cgImage: cropped)
+                    let colorFilter = CIFilter(name: "CIColorControls")!
+                    colorFilter.setValue(ci, forKey: kCIInputImageKey)
+                    colorFilter.setValue(0.0, forKey: kCIInputSaturationKey)
+                    colorFilter.setValue(1.3, forKey: kCIInputContrastKey)
+                    if let out = colorFilter.outputImage {
+                        let ctx = CIContext()
+                        if let processed = ctx.createCGImage(out, from: out.extent) {
+                            ocrImage = processed
+                        }
+                    }
+                }
+
+                // OCR
+                let request = VNRecognizeTextRequest { [weak self] req, _ in
+                    guard let obs = req.results as? [VNRecognizedTextObservation] else { return }
+                    let text = obs.compactMap { $0.topCandidates(1).first?.string }
+                        .joined(separator: "\n")
+
+                    if self?.settings.copyToClipboard == true {
+                        let pb = NSPasteboard.general
+                        pb.clearContents()
+                        pb.setString(text, forType: .string)
+                    }
+                    self?.settings.lastResult = text.isEmpty ? "(no text found)" : text
+                }
+                request.recognitionLevel = .accurate
+                request.usesLanguageCorrection = true
+
+                let handler = VNImageRequestHandler(cgImage: ocrImage, options: [:])
+                try handler.perform([request])
+            } catch {
+                NSLog("Capture failed: \(error)")
+            }
+        }
+    }
+}
+
+// MARK: - Overlay window & view
+
+final class OverlayWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+final class OverlayView: NSView {
+    var startPoint: NSPoint = .zero
+    var selectionRect: NSRect = .zero
+    var onComplete: ((NSRect) -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for ta in trackingAreas { removeTrackingArea(ta) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .inVisibleRect, .mouseMoved, .cursorUpdate],
+            owner: self, userInfo: nil
+        ))
+    }
+
+    override func mouseMoved(with event: NSEvent) { NSCursor.crosshair.set() }
+    override func cursorUpdate(with event: NSEvent) { NSCursor.crosshair.set() }
+
+    override func mouseDown(with event: NSEvent) {
+        NSCursor.crosshair.set()
+        startPoint = convert(event.locationInWindow, from: nil)
+        selectionRect = .zero
+        needsDisplay = true
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        NSCursor.crosshair.set()
+        let p = convert(event.locationInWindow, from: nil)
+        selectionRect = NSRect(
+            x: min(startPoint.x, p.x),
+            y: min(startPoint.y, p.y),
+            width: abs(p.x - startPoint.x),
+            height: abs(p.y - startPoint.y)
+        )
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if selectionRect.width > 5 && selectionRect.height > 5 {
+            onComplete?(selectionRect)
+        } else {
+            NSApp.terminate(nil)
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { // ESC
+            NSApp.terminate(nil)
+        } else {
+            super.keyDown(with: event)
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.black.withAlphaComponent(0.3).setFill()
+        bounds.fill()
+        if selectionRect.width > 0 {
+            NSColor.clear.setFill()
+            selectionRect.fill(using: .copy)
+            NSColor.systemBlue.setStroke()
+            let path = NSBezierPath(rect: selectionRect)
+            path.lineWidth = 2
+            path.stroke()
+        }
+    }
+}

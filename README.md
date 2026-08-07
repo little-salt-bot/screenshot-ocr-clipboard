@@ -1,41 +1,48 @@
-# Screenshot → OCR → Clipboard
+# OcrShot
 
-One-shot macOS tool: take a screenshot, OCR all the text in it, and copy it straight to your clipboard. No dependencies, all native Apple frameworks.
+A macOS menu bar app that captures a screen region, OCRs all the text in it, and copies it to your clipboard — all in one shot. No dependencies, all native Apple frameworks.
 
-## How it works
+## Features
 
-- **Screen Recording permission** — the app requests it on first run (System Settings → Privacy & Security → Screen Recording)
-- **Interactive region selection** — drag to select an area, or click to cancel
-- **Apple Vision framework** — accurate OCR with language correction
-- **`NSPasteboard`** — text lands on your clipboard
+- **Menu bar app** — lives in the status bar, no dock icon
+- **Global hotkey** — capture & copy from anywhere (default `⌘⇧X`, configurable)
+- **Drag-to-select** — crosshair reticle, works across all monitors
+- **Dark mode OCR** — optional grayscale + contrast preprocessing for light-on-dark text
+- **Launch at login** — optional
+- **Permissions UI** — check and grant Screen Recording access from the app
 
-## Usage
+## Build & Run
 
 ```bash
-./build.sh   # compile into ocrshot.app (needed once)
+./build.sh   # compile into OcrShot.app
 ./run.sh     # launch via LaunchServices (registers for Screen Recording)
 ```
 
-First run prompts for Screen Recording access. After granting it, run again, drag-select a region, and the text is on your clipboard.
+First run prompts for Screen Recording access. Grant it in System Settings → Privacy & Security → Screen Recording, then use the hotkey or the menu bar item.
 
-## Debug mode
+## Usage
 
-```bash
-./run.sh --debug
-```
+- **Hotkey** (default `⌘⇧X`) — start a capture
+- **Menu bar icon** — click to capture, or open Settings
+- **Drag** to select a region, **ESC** to cancel
+- Text is copied to the clipboard automatically
 
-Runs the binary directly so console output is visible, and saves the captured + processed images to your home dir (`~/ocrshot_crop_*.png`, `~/ocrshot_processed_*.png`) so you can see exactly what OCR received. All steps also log to `~/ocrshot.log`.
+## Settings
 
-## Files
+- **Shortcut** — record a custom global hotkey
+- **General** — toggle clipboard copy, dark-mode preprocessing, launch at login
+- **Permissions** — view/grant Screen Recording access
 
-- `ocrshot.sh` — runs the Swift app
-- `ocrshot.swift` — the whole flow: permission → capture → OCR → clipboard
+## Architecture
+
+- `Sources/OcrShotApp.swift` — SwiftUI `MenuBarExtra` + `Settings` scene
+- `Sources/AppDelegate.swift` — hotkey registration on launch
+- `Sources/HotkeyManager.swift` — Carbon global hotkey + keycode helpers
+- `Sources/CaptureController.swift` — overlay, ScreenCaptureKit capture, Vision OCR
+- `Sources/SettingsStore.swift` — `@AppStorage`-backed settings
+- `Sources/SettingsView.swift` — SwiftUI settings UI
 
 ## Requirements
 
-- macOS (uses the Vision framework, `CGWindowListCreateImage`, and `NSPasteboard`)
-- Xcode Command Line Tools (for `swift`)
-
-## Optional: global hotkey
-
-Add a Quick Action in Shortcuts, or a keyboard shortcut under **System Settings → Keyboard → Shortcuts → Services**, that runs `ocrshot.sh` for a true one-key capture.
+- macOS 13+ (uses `MenuBarExtra`, `ScreenCaptureKit`, Vision)
+- Xcode Command Line Tools (for `swiftc`)
