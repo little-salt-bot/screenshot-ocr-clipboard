@@ -192,6 +192,23 @@ for (i, overlay) in overlays.enumerated() {
                     return
                 }
 
+                // Preprocess for OCR: grayscale + contrast boost.
+                // Dark-mode screenshots (light text on dark bg) trip up Vision;
+                // normalizing to high-contrast grayscale fixes that.
+                let ci = CIImage(cgImage: cropped)
+                let filter = CIFilter(name: "CIColorControls")!
+                filter.setValue(ci, forKey: kCIInputImageKey)
+                filter.setValue(0.0, forKey: kCIInputSaturationKey)  // grayscale
+                filter.setValue(1.3, forKey: kCIInputContrastKey)     // boost contrast
+                let out = filter.outputImage!
+                let ctx = CIContext()
+                guard let processed = ctx.createCGImage(out, from: out.extent) else {
+                    log("Preprocess failed.")
+                    NSApp.terminate(nil)
+                    return
+                }
+                log("Preprocessed image for OCR.")
+
                 let request = VNRecognizeTextRequest { req, _ in
                     guard let obs = req.results as? [VNRecognizedTextObservation] else { return }
                     let text = obs.compactMap { $0.topCandidates(1).first?.string }
@@ -207,7 +224,7 @@ for (i, overlay) in overlays.enumerated() {
                 request.recognitionLevel = .accurate
                 request.usesLanguageCorrection = true
 
-                let handler = VNImageRequestHandler(cgImage: cropped, options: [:])
+                let handler = VNImageRequestHandler(cgImage: processed, options: [:])
                 try handler.perform([request])
             } catch {
                 log("Capture failed: \(error)")
